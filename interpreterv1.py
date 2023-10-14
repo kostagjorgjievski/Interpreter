@@ -6,6 +6,7 @@ class Interpreter(InterpreterBase):
     def __init__(self, console_output=True, inp=None, trace_output=False):
         super().__init__(console_output, inp)
         self.variable_to_value = {}
+        self.statements_values = []
 
     def find_main_func(self, node):
         if node.get("functions")[0].get("name") != "main":
@@ -13,33 +14,35 @@ class Interpreter(InterpreterBase):
         return [True, node.get("functions")[0]]
 
     def process_statement(self, statement):
+        # first we need to determine statement type (assignment or function call)
+        statement_type = None
+        if statement.elem_type == "=":
+            statement_type = "assignment"
+        elif statement.elem_type == "fcall":
+            statement_type = "function_call"
+        else:
+            self.error(ErrorType.TYPE_ERROR, "Invalid statement type")
+
+
         statement_name = statement.get("name")
-        statement_expression = statement.get("expression")
-
-
-        if statement_expression == None:
-            self.error(ErrorType.TYPE_ERROR, "Statement expression is of None type")
-
 
         # Evaluatiing expressions
         # if expression type is operation, call one func to evaluate
         # if expression type is function call, call another func to evalue
-        expression_type = None
-        if statement_expression.elem_type in ["+", "-"]:
-            self.variable_to_value[statement_name] = self.evaluate_expression_operation(statement_expression)
+        if statement_type  == "assignment":
+            statement_expression = statement.get("expression")
+            print("NAME: " + str(statement.get("name")))
+            print("EXP: " + str(statement_expression) )
+            self.variable_to_value[statement_name] = self.evaluate_exp(statement_expression)
             print(self.variable_to_value)
-        elif statement_expression.elem_type in "fcall":
-            self.variable_to_value[statement_name] = self.evaluate_expression_function_call(statement_expression)
-            print(self.variable_to_value)
-        else:
-            self.error(ErrorType.TYPE_ERROR, "Invalid statement for " + statement_name + ". The staement must match '+', '-', or 'fcall'.")
+        elif statement_type == "function_call":
+            self.variable_to_value[statement_name] = self.evaluate_expression_function_call(statement)
+
+        return self.statements_values.append(self.variable_to_value[statement_name])
 
 
-        for var, val in self.variable_to_value.items():
-            print(var + " : " + str(val))
-        return
-
-
+    def evaluate_expression_assignment(self, expression):
+        return evaluate_exp(expression)
 
     def evaluate_expression_operation(self, expression):
         mathematical_operation = None
@@ -50,55 +53,17 @@ class Interpreter(InterpreterBase):
         elif expression.elem_type == "-":
             mathematical_operation = "-"
         else:
-            self.error(ErrorType.TYPE_ERROR, "Invalid mathematical operation '" + expression.elem_type)
+            self.error(ErrorType.TYPE_ERROR, "Invalid mathematical operation '" + expression.elem_type + "' ")
 
 
         print(expression)
         if not expression.get("op1") or not expression.get("op2"):
-            self.error(NAME_ERROR, "Expression op not found")
+            self.error(ErrorType.NAME_ERROR, "Expression op not found")
 
-        print()
-        print("OP1")
-        print(expression.get("op1"))
-        print(expression.get("op1").get("val"))
-        print(expression.elem_type)
-
-        first_value = None
-        op1_type = self.determine_node_type(expression.get("op1"))
-        print(op1_type)
-        if op1_type == "var":
-            var_name = expression.get("op1").dict
-            if var_name not in self.variable_to_value:
-                self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
-            first_value = variable_to_value[var_name]
-        elif op1_type == "value_int":
-            first_value = expression.get("op1").dict.get("val")
-        elif op1_type == "value_string":
-            first_value = expression.get("op1").dict.get("val")
-        elif op1_type == "expression_operation":
-            first_value = evaluate_expression_operation(expression.get("op1"))
-        elif op1_type == "expression_fcall":
-            first_value = evaluate_expression_function_call(expression.get("op1"))
-        else:
-            self.error(ErrorType.NAME_ERROR, "Operation value does not exist: " + op1_type )
-
-
-        second_value = None
-        op2_type = self.determine_node_type(expression.get("op2"))
-        if op2_type == "var":
-            var_name = expression.get("op2").dict
-            if var_name not in self.variable_to_value:
-                self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
-            second_value = variable_to_value[var_name]
-        elif op2_type == "value_int":
-            second_value = expression.get("op2").dict.get("val")
-        elif op2_type == "value_string":
-            second_value = expression.get("op2").dict.get("val")
-        elif op2_type == "expression_operation":
-            second_value = evaluate_expression_operation(expression.get("op2"))
-        elif op2_type == "expression_fcall":
-            second_value = evaluate_expression_function_call(expression.get("op2"))
-        else:
+        first_value = self.evaluate_exp(expression.get("op1"))
+        second_value = self.evaluate_exp(expression.get("op2"))
+        print(str(first_value) + " __________  " + str(second_value))
+        if not first_value or not second_value:
             self.error(ErrorType.NAME_ERROR, "Operation value does not exist")
 
 
@@ -113,23 +78,46 @@ class Interpreter(InterpreterBase):
         return 0
 
 
-    def determine_node_type(self, op):
+    def evaluate_exp(self, op):
         if op.elem_type == "var":
-            return "variable"
+            var_name = op.dict.get("name")
+            if var_name not in self.variable_to_value:
+                self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
+            return self.variable_to_value[var_name]
         if op.elem_type in ["+", "-"]:
-            return "expression_operation"
+            return self.evaluate_expression_operation(op)
         if op.elem_type == "fcall":
-            return "expression_fcall"
+            return self.evaluate_expression_function_call(op)
         if op.elem_type == "int":
-            return "value_int"
+            return op.dict.get("val")
         if op.elem_type == "string":
-            return "value_string"
-        
+            return op.dict.get("val")
         return None
 
-    def evaluate_expression_function_call(self, statement_expression, statement_name):
+    def evaluate_expression_function_call(self, statement):
+        name_of_func = statement.get("name")
+        if name_of_func == "print":
+            self.evaluate_print(statement.get("args"))
+        elif name_of_func == "inputi":
+            return_val = int(self.evaluate_inputi(statement.get("args")))
+            return return_val
+        else:
+            self.error(ErrorType.NAME_ERROR, "Function not found")
+
         return
 
+    def evaluate_print(self, args):
+        print_string = ""
+        for arg in args:
+            print_string += str(self.evaluate_exp(arg))
+        self.output(print_string)
+
+    def evaluate_inputi(self, args):
+        promt_string = ""
+        for arg in args:
+            promt_string += str(self.evaluate_exp(arg))
+        input_val = self.get_input(promt_string)
+        return input_val
 
     def run(self, program):
         ast = parse_program(program)
@@ -144,4 +132,6 @@ class Interpreter(InterpreterBase):
         statements = main.get("statements")
         for statement in statements:
             self.process_statement(statement)
+
+
         
