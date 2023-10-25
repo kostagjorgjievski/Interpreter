@@ -31,10 +31,7 @@ class Interpreter(InterpreterBase):
         # if expression type is function call, call another func to evalue
         if statement_type  == "assignment":
             statement_expression = statement.get("expression")
-            print("NAME: " + str(statement.get("name")))
-            print("EXP: " + str(statement_expression) )
             self.variable_to_value[statement_name] = self.evaluate_exp(statement_expression)
-            print(self.variable_to_value)
         elif statement_type == "function_call":
             self.variable_to_value[statement_name] = self.evaluate_expression_function_call(statement)
 
@@ -44,36 +41,93 @@ class Interpreter(InterpreterBase):
     def evaluate_expression_assignment(self, expression):
         return evaluate_exp(expression)
 
-    def evaluate_expression_operation(self, expression):
-        mathematical_operation = None
-        if expression == None:
-            return 0
-        if expression.elem_type == "+":
-            mathematical_operation = "+"
-        elif expression.elem_type == "-":
-            mathematical_operation = "-"
-        else:
-            self.error(ErrorType.TYPE_ERROR, "Invalid mathematical operation '" + expression.elem_type + "' ")
 
-
-        print(expression)
+    def get_first_second_value(self, expression):
         if not expression.get("op1") or not expression.get("op2"):
             self.error(ErrorType.NAME_ERROR, "Expression op not found")
 
         first_value = self.evaluate_exp(expression.get("op1"))
         second_value = self.evaluate_exp(expression.get("op2"))
-        print(str(first_value) + " __________  " + str(second_value))
         if not first_value or not second_value:
             self.error(ErrorType.NAME_ERROR, "Operation value does not exist")
 
+        return [first_value, second_value]
 
 
-        if type(first_value) != type(second_value):
-            self.error(ErrorType.TYPE_ERROR, "Expression Type Error Line 79")
-        if mathematical_operation == "+":
+    def evaluate_integer_operation(self, first_value, second_value, expression):
+
+        #TO DO (HANDLE URINARY OPERATORS)
+        if expression == None:
+            return 0
+            # MIGHT CAUSE ERROR
+        if expression.elem_type == "+":
             return first_value + second_value
-        if mathematical_operation == "-":
+        elif expression.elem_type == "-":
             return first_value - second_value
+        elif expression.elem_type == "/":
+            return first_value // second_value
+        elif expression.elem_type == "*":
+            return first_value * second_value
+        elif expression.elem_type == "==":
+            return first_value == second_value
+        elif expression.elem_type == "!=":
+            return first_value != second_value
+        elif expression.elem_type == "<":
+            return first_value < second_value
+        elif expression.elem_type == "<=":
+            return first_value <= second_value
+        elif expression.elem_type == ">":
+            return first_value > second_value
+        elif expression.elem_type == ">=":
+            return first_value >= second_value
+        else:
+            self.error(ErrorType.TYPE_ERROR, "Invalid integer operation '" + expression.elem_type + "' ")
+        return
+
+    def evaluate_boolean_operation(self, first_value, second_value, expression):
+        #gotta deal with unary opeartor !
+        if expression == None:
+            return 0
+            # MIGHT CAUSE ERROR
+        if expression.elem_type == "&&":
+            return first_value and second_value
+        elif expression.elem_type == "||":
+            return first_value or second_value
+        elif expression.elem_type == "==":
+            return first_value == second_value
+        elif expression.elem_type == "!=":
+            return first_value != second_value
+        else:
+            self.error(ErrorType.TYPE_ERROR, "Invalid boolean operation '" + expression.elem_type + "' ")
+            
+    def evaluate_string_operation(self, first_value, second_value, expression):
+        if expression == None:
+            return 0
+            # MIGHT CAUSE ERROR
+        if expression.elem_type == "+":
+            return first_value + second_value
+        elif expression.elem_type == "==":
+            return first_value == second_value
+        elif expression.elem_type == "!=":
+            return first_value != second_value
+        else:
+            self.error(ErrorType.TYPE_ERROR, "Invalid string operation '" + expression.elem_type + "' ")
+
+
+    def evaluate_expression_operation(self, expression):
+
+        first_value, second_value = self.get_first_second_value(expression)
+        if type(first_value) != type(second_value):
+            self.error(ErrorType.TYPE_ERROR, "Types have to be the same to preform operations'" + expression.elem_type + "' ")
+
+        if isinstance(first_value, int) and isinstance(second_value, int):
+            return self.evaluate_integer_operation(first_value, second_value, expression)
+
+        if isinstance(first_value, bool) and isinstance(second_value, bool):
+            return self.evaluate_boolean_operation(first_value, second_value, expression)
+
+        if isinstance(first_value, str) and isinstance(second_value, str):
+            return self.evaluate_string_operation(first_value, second_value, expression)
          
         return 0
 
@@ -84,7 +138,7 @@ class Interpreter(InterpreterBase):
             if var_name not in self.variable_to_value:
                 self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
             return self.variable_to_value[var_name]
-        if op.elem_type in ["+", "-"]:
+        if op.elem_type in ["+", "-", "*", "/"]:
             return self.evaluate_expression_operation(op)
         if op.elem_type == "fcall":
             return self.evaluate_expression_function_call(op)
@@ -99,8 +153,23 @@ class Interpreter(InterpreterBase):
         if name_of_func == "print":
             self.evaluate_print(statement.get("args"))
         elif name_of_func == "inputi":
-            return_val = int(self.evaluate_inputi(statement.get("args")))
-            return return_val
+            ### 99->109 The following code was written using the help of ChatGPT to solve
+            ### test case where inputi was not working properly.
+            if len(statement.get("args")) > 1:
+                self.error(ErrorType.NAME_ERROR, "Inputi takes only one paramenter")
+            else:
+                if statement.get("args"):
+                    prompt = self.evaluate_exp(statement.get("args")[0])
+                    #self.output(prompt) COMMENTED FOR TESTING
+                try:
+                    user_input = super().get_input()
+                    return int(user_input)
+                except ValueError:
+                    self.error(ErrorType.TYPE_ERROR, "Input is not an integer")
+            ### GPT citation ends here
+        elif name_of_func in "customFunc":
+            #process custom functions
+            return
         else:
             self.error(ErrorType.NAME_ERROR, "Function not found")
 
@@ -112,17 +181,19 @@ class Interpreter(InterpreterBase):
             print_string += str(self.evaluate_exp(arg))
         self.output(print_string)
 
-    def evaluate_inputi(self, args):
-        promt_string = ""
-        for arg in args:
-            promt_string += str(self.evaluate_exp(arg))
-        input_val = self.get_input(promt_string)
-        return input_val
+    # def evaluate_inputi(self, args):
+    #     promt_string = ""
+    #     for arg in args:
+    #         promt_string += str(self.evaluate_exp(arg))
+    #     self.output(promt_string)
+    #     input_val = self.get_input()
+
+    #     while input_val is None:
+    #         input_val = self.get_input()
+    #     return input_val
 
     def run(self, program):
         ast = parse_program(program)
-        print()
-        print(ast)
 
         valid, main = self.find_main_func(ast)
 
