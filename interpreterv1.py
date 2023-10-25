@@ -7,6 +7,7 @@ class Interpreter(InterpreterBase):
         super().__init__(console_output, inp)
         self.variable_to_value = {}
         self.statements_values = []
+        self.allowed_operations = ["+", "-", "*", "/", "==" "!=", "<", "<=", ">", ">=", "&&", "||"]
 
     def find_main_func(self, node):
         if node.get("functions")[0].get("name") != "main":
@@ -22,7 +23,6 @@ class Interpreter(InterpreterBase):
             statement_type = "function_call"
         else:
             self.error(ErrorType.TYPE_ERROR, "Invalid statement type")
-
 
         statement_name = statement.get("name")
 
@@ -45,9 +45,12 @@ class Interpreter(InterpreterBase):
     def get_first_second_value(self, expression):
         if not expression.get("op1") or not expression.get("op2"):
             self.error(ErrorType.NAME_ERROR, "Expression op not found")
-
         first_value = self.evaluate_exp(expression.get("op1"))
         second_value = self.evaluate_exp(expression.get("op2"))
+
+        if isinstance(first_value, bool) and isinstance(second_value, bool):
+            return [first_value, second_value]
+
         if not first_value or not second_value:
             self.error(ErrorType.NAME_ERROR, "Operation value does not exist")
 
@@ -86,8 +89,8 @@ class Interpreter(InterpreterBase):
 
     def evaluate_boolean_operation(self, first_value, second_value, expression):
         #gotta deal with unary opeartor !
-        if expression == None:
-            return 0
+        if expression is None:
+            return False
             # MIGHT CAUSE ERROR
         if expression.elem_type == "&&":
             return first_value and second_value
@@ -115,16 +118,16 @@ class Interpreter(InterpreterBase):
 
 
     def evaluate_expression_operation(self, expression):
-
         first_value, second_value = self.get_first_second_value(expression)
         if type(first_value) != type(second_value):
             self.error(ErrorType.TYPE_ERROR, "Types have to be the same to preform operations'" + expression.elem_type + "' ")
 
+        if isinstance(first_value, bool) and isinstance(second_value, bool):
+            return self.evaluate_boolean_operation(first_value, second_value, expression)
+
         if isinstance(first_value, int) and isinstance(second_value, int):
             return self.evaluate_integer_operation(first_value, second_value, expression)
 
-        if isinstance(first_value, bool) and isinstance(second_value, bool):
-            return self.evaluate_boolean_operation(first_value, second_value, expression)
 
         if isinstance(first_value, str) and isinstance(second_value, str):
             return self.evaluate_string_operation(first_value, second_value, expression)
@@ -133,12 +136,13 @@ class Interpreter(InterpreterBase):
 
 
     def evaluate_exp(self, op):
+
         if op.elem_type == "var":
             var_name = op.dict.get("name")
             if var_name not in self.variable_to_value:
                 self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
             return self.variable_to_value[var_name]
-        if op.elem_type in ["+", "-", "*", "/"]:
+        if op.elem_type in self.allowed_operations:
             return self.evaluate_expression_operation(op)
         if op.elem_type == "fcall":
             return self.evaluate_expression_function_call(op)
@@ -146,7 +150,10 @@ class Interpreter(InterpreterBase):
             return op.dict.get("val")
         if op.elem_type == "string":
             return op.dict.get("val")
-        return None
+        if op.elem_type == "bool":
+            return op.dict.get("val")
+
+        return -1
 
     def evaluate_expression_function_call(self, statement):
         name_of_func = statement.get("name")
@@ -178,7 +185,12 @@ class Interpreter(InterpreterBase):
     def evaluate_print(self, args):
         print_string = ""
         for arg in args:
-            print_string += str(self.evaluate_exp(arg))
+            res = self.evaluate_exp(arg)
+            #Dealing with bools is different
+            if isinstance(res, bool):
+                print_string += str(res).lower()
+            else:
+                print_string += str(res)
         self.output(print_string)
 
     # def evaluate_inputi(self, args):
@@ -196,13 +208,14 @@ class Interpreter(InterpreterBase):
         ast = parse_program(program)
 
         valid, main = self.find_main_func(ast)
-
         if not valid:
             self.error(ErrorType.NAME_ERROR, "main is not defined")
 
         statements = main.get("statements")
         for statement in statements:
             self.process_statement(statement)
+
+        return -404
 
 
         
