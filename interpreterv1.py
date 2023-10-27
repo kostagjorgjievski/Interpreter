@@ -7,7 +7,7 @@ class Interpreter(InterpreterBase):
         super().__init__(console_output, inp)
         self.variable_to_value = {}
         self.statements_values = []
-        self.allowed_operations = ["+", "-", "*", "/", "==" "!=", "<", "<=", ">", ">=", "&&", "||"]
+        self.allowed_operations = ["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">=", "&&", "||"]
 
     def find_main_func(self, node):
         if node.get("functions")[0].get("name") != "main":
@@ -17,14 +17,20 @@ class Interpreter(InterpreterBase):
     def process_statement(self, statement):
         # first we need to determine statement type (assignment or function call)
         statement_type = None
+
         if statement.elem_type == "=":
             statement_type = "assignment"
         elif statement.elem_type == "fcall":
             statement_type = "function_call"
+        elif statement.elem_type == "if":
+            statement_type = "if"
+        elif statement.elem_type == "while":
+            statement_type = "while"
         else:
             self.error(ErrorType.TYPE_ERROR, "Invalid statement type")
 
         statement_name = statement.get("name")
+
 
         # Evaluatiing expressions
         # if expression type is operation, call one func to evaluate
@@ -34,9 +40,29 @@ class Interpreter(InterpreterBase):
             self.variable_to_value[statement_name] = self.evaluate_exp(statement_expression)
         elif statement_type == "function_call":
             self.variable_to_value[statement_name] = self.evaluate_expression_function_call(statement)
+        elif statement_type == "if":
+            self.evaluate_expression_if(statement)
+            return
+        elif statement_type == "while":
+            self.evaluate_expression_while(statement)
+            return
 
         return self.statements_values.append(self.variable_to_value[statement_name])
 
+    def evaluate_expression_while(self, statement):
+        while self.evaluate_exp(statement.get("condition")):
+            for inside_statements in statement.get("statements"):
+                self.process_statement(inside_statements)
+
+    def evaluate_expression_if(self, statement):
+        res = self.evaluate_exp(statement.get("condition"))
+        if res:
+            for inside_statements in statement.get("statements"):
+                self.process_statement(inside_statements)
+        if not res and statement.get("else_statements") != None:
+            for else_statements in statement.get("else_statements"):
+                self.process_statement(else_statements)
+        return
 
     def evaluate_expression_assignment(self, expression):
         return evaluate_exp(expression)
@@ -45,20 +71,21 @@ class Interpreter(InterpreterBase):
     def get_first_second_value(self, expression):
         if not expression.get("op1") or not expression.get("op2"):
             self.error(ErrorType.NAME_ERROR, "Expression op not found")
+        
         first_value = self.evaluate_exp(expression.get("op1"))
         second_value = self.evaluate_exp(expression.get("op2"))
+
 
         if isinstance(first_value, bool) and isinstance(second_value, bool):
             return [first_value, second_value]
 
-        if not first_value or not second_value:
+        if first_value == None or second_value == None:
             self.error(ErrorType.NAME_ERROR, "Operation value does not exist")
 
         return [first_value, second_value]
 
 
     def evaluate_integer_operation(self, first_value, second_value, expression):
-
         #TO DO (HANDLE URINARY OPERATORS)
         if expression == None:
             return 0
@@ -68,7 +95,10 @@ class Interpreter(InterpreterBase):
         elif expression.elem_type == "-":
             return first_value - second_value
         elif expression.elem_type == "/":
-            return first_value // second_value
+            try:
+                return first_value // second_value
+            except ZeroDivisionError:
+                self.error(ErrorType.ZERO_DIVISION, "You cannot divide by zero")
         elif expression.elem_type == "*":
             return first_value * second_value
         elif expression.elem_type == "==":
@@ -84,7 +114,7 @@ class Interpreter(InterpreterBase):
         elif expression.elem_type == ">=":
             return first_value >= second_value
         else:
-            self.error(ErrorType.TYPE_ERROR, "Invalid integer operation '" + expression.elem_type + "' ")
+            self.error(ErrorType.TYPE_ERROR, "Invalid integer operation '" + expression.elem_type + "',  first_value = " + str(first_value) + " second_value = " + str(second_value))
         return
 
     def evaluate_boolean_operation(self, first_value, second_value, expression):
@@ -142,7 +172,7 @@ class Interpreter(InterpreterBase):
             if var_name not in self.variable_to_value:
                 self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
             return self.variable_to_value[var_name]
-        if op.elem_type in self.allowed_operations:
+        if str(op.elem_type) in self.allowed_operations:
             return self.evaluate_expression_operation(op)
         if op.elem_type == "fcall":
             return self.evaluate_expression_function_call(op)
@@ -151,12 +181,13 @@ class Interpreter(InterpreterBase):
         if op.elem_type == "string":
             return op.dict.get("val")
         if op.elem_type == "bool":
-            if op.dict.get("val") == "true":
-                return True
-            else:
-                return False
+            return op.dict.get("val")
+        if op.elem_type == "neg":
+            return (-1) * self.evaluate_exp(op.dict.get("op1"))
+        if op.elem_type == "!":
+            return not op.dict.get("op1")
 
-        return -1
+        self.error(ErrorType.NAME_ERROR, "Value not found: " + str(op.elem_type))
 
     def evaluate_expression_function_call(self, statement):
         name_of_func = statement.get("name")
