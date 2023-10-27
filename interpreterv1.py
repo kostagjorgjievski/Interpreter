@@ -151,7 +151,10 @@ class Interpreter(InterpreterBase):
         if op.elem_type == "string":
             return op.dict.get("val")
         if op.elem_type == "bool":
-            return op.dict.get("val")
+            if op.dict.get("val") == "true":
+                return True
+            else:
+                return False
 
         return -1
 
