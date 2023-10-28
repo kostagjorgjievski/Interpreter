@@ -10,9 +10,11 @@ class Interpreter(InterpreterBase):
         self.allowed_operations = ["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">=", "&&", "||"]
 
     def find_main_func(self, node):
-        if node.get("functions")[0].get("name") != "main":
-            return [False, None]
-        return [True, node.get("functions")[0]]
+        for func in node.get("functions"):
+            if func.get("name") == "main":
+                return [True, func]
+
+        return [False, None]
 
     def process_statement(self, statement):
         # first we need to determine statement type (assignment or function call)
@@ -208,9 +210,10 @@ class Interpreter(InterpreterBase):
                 except ValueError:
                     self.error(ErrorType.TYPE_ERROR, "Input is not an integer")
             ### GPT citation ends here
-        elif name_of_func in "customFunc":
+        elif name_of_func in "inputs":
             #process custom functions
-            return
+            user_input = super().get_input()
+            return str(user_input)
         else:
             self.error(ErrorType.NAME_ERROR, "Function not found")
 
@@ -244,6 +247,10 @@ class Interpreter(InterpreterBase):
         valid, main = self.find_main_func(ast)
         if not valid:
             self.error(ErrorType.NAME_ERROR, "main is not defined")
+
+        all_functions = ast.get("functions")
+        for func in all_functions:
+            print(func)
 
         statements = main.get("statements")
         for statement in statements:
