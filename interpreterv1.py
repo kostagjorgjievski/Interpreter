@@ -8,17 +8,48 @@ class Interpreter(InterpreterBase):
         self.variable_to_value = {}
         self.statements_values = []
         self.allowed_operations = ["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">=", "&&", "||"]
+        self.call_stack = []
+        self.all_functions_names = []
+        self.all_functions = None
 
-    def find_main_func(self, node):
-        for func in node.get("functions"):
-            if func.get("name") == "main":
-                return [True, func]
 
-        return [False, None]
+
+    def evaluate_func(self, function):
+        for statement in function.get("statements"):
+            result = self.process_statement(statement)
+            print(statement)
+            if result != None:
+                return result
+        return None
+
+    def func_arg_pass(self, var_name, var_value):
+        self.call_stack[-1][var_name] = var_value
+
+    def get_variable(self, var_name):
+        for scope in self.call_stack[::-1]:
+            if var_name in scope:
+                return scope[var_name]
+        
+        self.error(ErrorType.NAME_ERROR, "Variable is not defined: " + str(var_name))
+
+    def set_variable(self, var_name, var_value):
+        for scope in self.call_stack[::-1]:
+            if var_name in scope:
+                scope[var_name] = var_value
+                return
+        self.call_stack[-1][var_name] = var_value
+
+    def get_func(self, name):
+        for func in self.all_functions:
+            if func.get("name") == name:
+                return func
+        return None
 
     def process_statement(self, statement):
         # first we need to determine statement type (assignment or function call)
         statement_type = None
+
+        #processing of arguments
 
         if statement.elem_type == "=":
             statement_type = "assignment"
@@ -28,28 +59,41 @@ class Interpreter(InterpreterBase):
             statement_type = "if"
         elif statement.elem_type == "while":
             statement_type = "while"
+        elif statement.elem_type == "return":
+            statement_type = "return"
         else:
             self.error(ErrorType.TYPE_ERROR, "Invalid statement type")
 
-        statement_name = statement.get("name")
 
 
         # Evaluatiing expressions
         # if expression type is operation, call one func to evaluate
         # if expression type is function call, call another func to evalue
         if statement_type  == "assignment":
+            statement_name = statement.get("name")
             statement_expression = statement.get("expression")
-            self.variable_to_value[statement_name] = self.evaluate_exp(statement_expression)
+            # self.variable_to_value[statement_name] = self.evaluate_exp(statement_expression)
+            var_name = statement_name
+            var_value = self.evaluate_exp(statement_expression)
+            self.set_variable(var_name, var_value)
         elif statement_type == "function_call":
-            self.variable_to_value[statement_name] = self.evaluate_expression_function_call(statement)
+            return_val = self.evaluate_expression_function_call(statement)
+            if return_val != None:
+                return return_val
         elif statement_type == "if":
-            self.evaluate_expression_if(statement)
-            return
+            return_val = self.evaluate_expression_if(statement)
+            if return_val != None:
+                return return_val
         elif statement_type == "while":
-            self.evaluate_expression_while(statement)
-            return
+            return_val = self.evaluate_expression_while(statement)
+            if return_val != None:
+                return return_val
+        elif statement_type == "return":
+            statement_expression = statement.get("expression")
+            return_val = self.evaluate_exp(statement_expression)
+            return return_val
 
-        return self.statements_values.append(self.variable_to_value[statement_name])
+        return None
 
     def evaluate_expression_while(self, statement):
         while self.evaluate_exp(statement.get("condition")):
@@ -60,10 +104,16 @@ class Interpreter(InterpreterBase):
         res = self.evaluate_exp(statement.get("condition"))
         if res:
             for inside_statements in statement.get("statements"):
-                self.process_statement(inside_statements)
+                if inside_statements.elem_type == "return":
+                    return self.process_statement(inside_statements)
+                else:
+                    self.process_statement(inside_statements)
         if not res and statement.get("else_statements") != None:
             for else_statements in statement.get("else_statements"):
-                self.process_statement(else_statements)
+                if else_statements.elem_type == "return":
+                    return self.process_statement(else_statements)
+                else:
+                    self.process_statement(else_statements)
         return
 
     def evaluate_expression_assignment(self, expression):
@@ -170,10 +220,11 @@ class Interpreter(InterpreterBase):
     def evaluate_exp(self, op):
 
         if op.elem_type == "var":
-            var_name = op.dict.get("name")
-            if var_name not in self.variable_to_value:
-                self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
-            return self.variable_to_value[var_name]
+            var_name = self.get_variable(op.dict.get("name"))
+            # var_name = op.dict.get("name")
+            # if var_name not in self.variable_to_value:
+            #     self.error(ErrorType.NAME_ERROR, "Variable does not exist in map")
+            return var_name
         if str(op.elem_type) in self.allowed_operations:
             return self.evaluate_expression_operation(op)
         if op.elem_type == "fcall":
@@ -210,8 +261,25 @@ class Interpreter(InterpreterBase):
                 except ValueError:
                     self.error(ErrorType.TYPE_ERROR, "Input is not an integer")
             ### GPT citation ends here
-        elif name_of_func in "inputs":
+        elif name_of_func in self.all_functions_names:
             #process custom functions
+            func = self.get_func(name_of_func)
+            if func != None:
+                self.call_stack.append({})
+                
+                #func def with diff number of args 
+                for arg, input_value in zip(func.get("args"), statement.get("args")):
+                    val = self.evaluate_exp(input_value)
+                    self.func_arg_pass(arg.get("name"), val)
+
+                res = self.evaluate_func(func)
+                self.call_stack.pop()
+                return res
+            else:
+                self.error(ErrorType.NAME_ERROR, "Function not found: " + str(name_of_func))
+
+
+        elif name_of_func == "inputs":
             user_input = super().get_input()
             return str(user_input)
         else:
@@ -243,19 +311,21 @@ class Interpreter(InterpreterBase):
 
     def run(self, program):
         ast = parse_program(program)
+        self.all_functions = ast.get("functions")
 
-        valid, main = self.find_main_func(ast)
-        if not valid:
+        main = self.get_func("main")
+        if not main:
             self.error(ErrorType.NAME_ERROR, "main is not defined")
 
-        all_functions = ast.get("functions")
-        for func in all_functions:
-            print(func)
+        for func in self.all_functions:
+            self.all_functions_names.append(func.get("name"))
 
         statements = main.get("statements")
+        self.call_stack.append({})
         for statement in statements:
             self.process_statement(statement)
 
+        self.call_stack.pop()
         return -404
 
 
