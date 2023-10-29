@@ -5,8 +5,8 @@ from brewparse import parse_program
 class Interpreter(InterpreterBase):
     def __init__(self, console_output=True, inp=None, trace_output=False):
         super().__init__(console_output, inp)
-        self.variable_to_value = {}
-        self.statements_values = []
+        #self.variable_to_value = {}
+        #self.statements_values = []
         self.allowed_operations = ["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">=", "&&", "||"]
         self.call_stack = []
         self.all_functions_names = []
@@ -98,7 +98,8 @@ class Interpreter(InterpreterBase):
     def evaluate_expression_while(self, statement):
         while self.evaluate_exp(statement.get("condition")):
             for inside_statements in statement.get("statements"):
-                self.process_statement(inside_statements)
+                if inside_statements.elem_type == "return":
+                    return self.process_statement(inside_statements)
 
     def evaluate_expression_if(self, statement):
         res = self.evaluate_exp(statement.get("condition"))
@@ -150,7 +151,7 @@ class Interpreter(InterpreterBase):
             try:
                 return first_value // second_value
             except ZeroDivisionError:
-                self.error(ErrorType.ZERO_DIVISION, "You cannot divide by zero")
+                self.error(ErrorType.TYPE_ERROR, "You cannot divide by zero")
         elif expression.elem_type == "*":
             return first_value * second_value
         elif expression.elem_type == "==":
@@ -233,6 +234,8 @@ class Interpreter(InterpreterBase):
             return op.dict.get("val")
         if op.elem_type == "string":
             return op.dict.get("val")
+        if op.elem_type == "nil":
+            return None
         if op.elem_type == "bool":
             return op.dict.get("val")
         if op.elem_type == "neg":
@@ -326,7 +329,7 @@ class Interpreter(InterpreterBase):
             self.process_statement(statement)
 
         self.call_stack.pop()
-        return -404
+        return 100 #success
 
 
         
