@@ -1,3 +1,4 @@
+
 from intbase import InterpreterBase
 from intbase import ErrorType
 from brewparse import parse_program
@@ -41,11 +42,12 @@ class Interpreter(InterpreterBase):
         self.call_stack[-1][var_name] = var_value
 
     def get_func(self, name, arg_count):
-        for func in self.all_functions:
-            if func.get("name") == name:
-                if arg_count in self.all_functions_names_to_args[name]:
+        if name in self.all_functions_names_to_args:
+            for arity, func in self.all_functions_names_to_args[name]:
+                if arity == arg_count:
                     return func
-        self.error(ErrorType.NAME_ERROR, "Function not found " + str(name))
+        self.error(ErrorType.NAME_ERROR, "Function with name" + str(name) + " and arity " + str(arg_count) + " not found.")
+
 
     def process_statement(self, statement):
         # first we need to determine statement type (assignment or function call)
@@ -83,11 +85,15 @@ class Interpreter(InterpreterBase):
             if return_val != None:
                 return return_val
         elif statement_type == "if":
+            self.call_stack.append({})
             return_val, ret = self.evaluate_expression_if(statement)
+            self.call_stack.pop()
             if ret:
                 return [return_val, ret]
         elif statement_type == "while":
+            self.call_stack.append({})
             return_val, ret = self.evaluate_expression_while(statement)
+            self.call_stack.pop()
             if ret:
                 return [return_val, True]
         elif statement_type == "return":
@@ -102,18 +108,24 @@ class Interpreter(InterpreterBase):
     def evaluate_expression_while(self, statement):
         MAX_ITERATIONS = 10000
         iterations = 0
+
+        if isinstance(self.evaluate_exp(statement.get("condition")), bool) == False:
+            self.error(ErrorType.TYPE_ERROR, "Condition must be boolean")
         while self.evaluate_exp(statement.get("condition")): 
             if iterations > MAX_ITERATIONS:
                 self.error("Max Iterations Error", "Max Iterations Error")
             for inside_statements in statement.get("statements"):
                 res, ret = self.process_statement(inside_statements)
-                if inside_statements.elem_type == "return" or ret == True:
-                    return res
+                if ret:
+                    return [res, True]
             iterations += 1
         return [None, False]
 
     def evaluate_expression_if(self, statement):
         res = self.evaluate_exp(statement.get("condition"))
+        if isinstance(res, bool) == False:
+            self.error(ErrorType.TYPE_ERROR, "Condition must be boolean")
+
         if res:
             for inside_statements in statement.get("statements"):
                 if inside_statements.elem_type == "return":
@@ -230,8 +242,13 @@ class Interpreter(InterpreterBase):
                 return first_value == second_value
             elif expression.elem_type == "!=":
                 return first_value != second_value
-            else:
-                self.error(ErrorType.TYPE_ERROR, "Invalid comparison between nil values")
+
+        if type(first_value) != type(second_value) and expression.elem_type == "==":
+                return False
+
+        if type(first_value) != type(second_value) and expression.elem_type == "!=":
+                return True
+
 
         if type(first_value) != type(second_value):
             self.error(ErrorType.TYPE_ERROR, "Types have to be the same to preform operations'" + expression.elem_type + "' || " + str(type(first_value)) + " - " + str(type(second_value)) )
@@ -245,7 +262,7 @@ class Interpreter(InterpreterBase):
         if isinstance(first_value, str) and isinstance(second_value, str):
             return self.evaluate_string_operation(first_value, second_value, expression)
          
-        return 0
+        self.error(ErrorType.TYPE_ERROR, "Invalid comparison between values")
 
 
     def evaluate_exp(self, op):
@@ -272,9 +289,19 @@ class Interpreter(InterpreterBase):
         if op.elem_type == "bool":
             return op.dict.get("val")
         if op.elem_type == "neg":
-            return (-1) * self.evaluate_exp(op.dict.get("op1"))
+            val = self.evaluate_exp(op.dict.get("op1"))
+            if isinstance(val, int):
+                return (-1) * val
+            else: 
+                self.error(ErrorType.TYPE_ERROR, "Value invalid" + str(op.elem_type))
+
         if op.elem_type == "!":
-            return not op.dict.get("op1")
+            val = self.evaluate_exp(op.dict.get("op1"))
+            if isinstance(val, bool):
+                return not val
+            else:
+                self.error(ErrorType.TYPE_ERROR, "Value invalid" + str(op.elem_type))
+
         if op.elem_type == "nil":
             return None
 
@@ -292,7 +319,7 @@ class Interpreter(InterpreterBase):
             else:
                 if statement.get("args"):
                     prompt = self.evaluate_exp(statement.get("args")[0])
-                    #self.output(prompt)
+                    self.output(prompt)
                 try:
                     user_input = super().get_input()
                     return int(user_input)
@@ -303,22 +330,17 @@ class Interpreter(InterpreterBase):
             #process custom functions
             input_argument_count = len(statement.get("args"))
             func = self.get_func(name_of_func, input_argument_count)
-            if func != None:
+            if func:
                 self.call_stack.append({})
-                
-                if input_argument_count in self.all_functions_names_to_args[func.get("name")]:
-                    #func def with diff number of args 
-                    for arg, input_value in zip(func.get("args"), statement.get("args")):
-                        val = self.evaluate_exp(input_value)
-                        self.func_arg_pass(arg.get("name"), val)
+                for arg, input_value in zip(func.get("args"), statement.get("args")):
+                    val = self.evaluate_exp(input_value)
+                    self.func_arg_pass(arg.get("name"), val)
 
-                    res = self.evaluate_func(func)
-                    self.call_stack.pop()
-                    return res
-                else:
-                    self.error(ErrorType.NAME_ERROR, "Function with that amount of arguments not found")
+                res = self.evaluate_func(func)
+                self.call_stack.pop()
+                return res
             else:
-                self.error(ErrorType.NAME_ERROR, "Function not found: " + str(name_of_func))
+                self.error(ErrorType.NAME_ERROR, "Function with that amount of arguments not found")
 
 
         elif name_of_func == "inputs":
@@ -327,7 +349,7 @@ class Interpreter(InterpreterBase):
             else:
                 if statement.get("args"):
                     prompt = self.evaluate_exp(statement.get("args")[0])
-                    #self.output(prompt)
+                    self.output(prompt)
                 user_input = super().get_input()
                 return str(user_input)
         else:
@@ -347,6 +369,7 @@ class Interpreter(InterpreterBase):
             else:
                 print_string += str(res)
         self.output(print_string)
+        return None
 
     # def evaluate_inputi(self, args):
     #     promt_string = ""
@@ -364,7 +387,8 @@ class Interpreter(InterpreterBase):
         self.all_functions = ast.get("functions")
 
         for func in self.all_functions:
-            self.all_functions_names_to_args[func.get("name")].append(len(func.get("args")))
+            self.all_functions_names_to_args[func.get("name")].append((len(func.get("args")), func))
+
 
         main = self.get_func("main", 0)
         if not main:
@@ -378,6 +402,3 @@ class Interpreter(InterpreterBase):
                 return res
         self.call_stack.pop()
         return -404
-
-
-        
